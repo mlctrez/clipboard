@@ -1,0 +1,73 @@
+<html lang="en">
+<head>
+    <title>Clipboard</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <script>
+        document.addEventListener('paste', (event) => {
+                let items = event.clipboardData.items;
+                for (const itemKey in items) {
+                    const item = items[itemKey]
+                    if (item.type && item.type.indexOf("image") === 0) {
+                        const reader = new FileReader();
+                        reader.onload = function (event) {
+                            fetch('/clips', {
+                                method: "POST", headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({"clip": event.target.result.toString()})
+                            }).then(showClips)
+                                .catch((error) => {
+                                    console.error('Error:', error);
+                                });
+                        };
+                        reader.readAsDataURL(item.getAsFile());
+                    }
+                }
+            }
+        );
+
+        function removeAllChildNodes(parent) {
+            while (parent.firstChild) {
+                parent.removeChild(parent.firstChild);
+            }
+        }
+
+        function showClips() {
+            fetch('/clips')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.querySelector('#container');
+                    removeAllChildNodes(container);
+
+                    let needSep = false
+                    for (const clip of data["clips"]) {
+                        if (needSep) {
+                            container.appendChild(document.createElement("hr"))
+                        }
+                        const img = document.createElement("img")
+                        img.src = "https://EXTERNAL_HOST/clips/" + clip
+                        img.onclick = (event) => {
+                            fetch('/clips/' + clip, {method: "DELETE",}).then(showClips)
+                                .catch((error) => {
+                                    console.error('Error:', error);
+                                });
+                        }
+                        container.appendChild(img)
+                        needSep = true
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+        }
+
+        window.addEventListener("load", showClips);
+
+    </script>
+</head>
+<body>
+<div id="container">
+</div>
+</body>
+</html>
