@@ -1,6 +1,6 @@
 
 NAME=clipboard
-HOST=salty
+HOST=goservice
 
 build: program/program.go
 	mkdir -p temp
