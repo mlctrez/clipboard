@@ -46,7 +46,7 @@
                             container.appendChild(document.createElement("hr"))
                         }
                         const img = document.createElement("img")
-                        img.src = "https://EXTERNAL_HOST/clips/" + clip
+                        img.src = "/clips/" + clip
                         img.onclick = (event) => {
                             fetch('/clips/' + clip, {method: "DELETE",}).then(showClips)
                                 .catch((error) => {
