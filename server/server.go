@@ -65,6 +65,7 @@ func (i *impl) Listen(address string) (err error) {
 	r.GET("/clips/:timestamp", i.getClip)
 	r.DELETE("/clips/:timestamp", i.deleteClip)
 	r.POST("/clips", i.saveClip)
+	r.PUT("/clips/:timestamp", i.replaceClip)
 
 	i.srv = &http.Server{Handler: r}
 
@@ -135,6 +136,36 @@ func (i *impl) saveClip(c *gin.Context) {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
+}
+
+func (i *impl) replaceClip(c *gin.Context) {
+	timestamp := c.Param("timestamp")
+	if timestamp == "" {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	upload := &UploadClip{}
+	if c.BindJSON(upload) != nil {
+		return
+	}
+
+	var ci *api.ClippedImage
+	var err error
+
+	if ci, err = api.ParseClippedImage(upload.Clip); err != nil {
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	if ci == nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	// Keep the original timestamp so it replaces the existing entry
+	ci.TimeStamp = timestamp
+	if err := i.db.Save(ci); err != nil {
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
+	}
 }
 
 type UploadClip struct {
