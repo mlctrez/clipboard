@@ -4,6 +4,7 @@ import (
 	"clipboard/api"
 	"clipboard/static"
 	"context"
+	"crypto/subtle"
 	"net"
 	"net/http"
 	"sort"
@@ -13,11 +14,18 @@ import (
 	"github.com/kardianos/service"
 )
 
+const (
+	authCookieName = "clip_auth"
+	// ~10 years; browsers may clamp long-lived cookies.
+	authCookieMaxAge = 10 * 365 * 24 * 60 * 60
+)
+
 type impl struct {
-	db       api.StorageApi
-	listener net.Listener
-	srv      *http.Server
-	logger   service.Logger
+	db        api.StorageApi
+	listener  net.Listener
+	srv       *http.Server
+	logger    service.Logger
+	clipToken string
 }
 
 func (i *impl) Serve() error {
@@ -34,6 +42,23 @@ func (i *impl) Shutdown(ctx context.Context) error {
 	return i.srv.Shutdown(ctx)
 }
 
+func (i *impl) isExternal(c *gin.Context) bool {
+	return c.Request.Header.Get("X-Homessl-Forwarded") == "true"
+}
+
+func (i *impl) hasAdminCookie(c *gin.Context) bool {
+	cookie, err := c.Cookie(authCookieName)
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(cookie), []byte(i.clipToken)) == 1
+}
+
+// isAdmin: full admin on the LAN without a cookie, or externally when the auth cookie is set.
+func (i *impl) isAdmin(c *gin.Context) bool {
+	return !i.isExternal(c) || i.hasAdminCookie(c)
+}
+
 func (i *impl) Listen(address string) (err error) {
 	i.logger.Info("listen at", address)
 	gin.SetMode(gin.ReleaseMode)
@@ -41,15 +66,17 @@ func (i *impl) Listen(address string) (err error) {
 	r.Use(gin.Recovery())
 
 	r.Use(func(c *gin.Context) {
-
-		// allow everything inside the network
-		if c.Request.Header.Get("X-Homessl-Forwarded") != "true" {
+		if i.isAdmin(c) {
 			c.Next()
 			return
 		}
 
+		// External, unauthenticated: only public image GETs and login.
 		path := c.Request.URL.Path
-		// only allow get /clips/timestamp outside network
+		if c.Request.Method == http.MethodGet && strings.HasPrefix(path, "/login/") {
+			c.Next()
+			return
+		}
 		if c.Request.Method == http.MethodGet && strings.HasPrefix(path, "/clips/") {
 			c.Next()
 			return
@@ -60,7 +87,9 @@ func (i *impl) Listen(address string) (err error) {
 		}
 		c.Next()
 	})
-	static.SetupRoutes(r)
+
+	r.GET("/login/:token", i.login)
+	static.SetupRoutes(r, i.isAdmin)
 	r.GET("/clips", i.listClips)
 	r.GET("/clips/:timestamp", i.getClip)
 	r.DELETE("/clips/:timestamp", i.deleteClip)
@@ -72,6 +101,17 @@ func (i *impl) Listen(address string) (err error) {
 	i.listener, err = net.Listen("tcp4", address)
 
 	return
+}
+
+func (i *impl) login(c *gin.Context) {
+	token := c.Param("token")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(i.clipToken)) == 1 {
+		c.SetSameSite(http.SameSiteLaxMode)
+		// path=/, secure, httpOnly — domain empty (current host)
+		c.SetCookie(authCookieName, i.clipToken, authCookieMaxAge, "/", "", true, true)
+	}
+	// Match or not: always redirect to root; wrong token never sets the cookie.
+	c.Redirect(http.StatusFound, "/")
 }
 
 func (i *impl) listClips(c *gin.Context) {
@@ -109,10 +149,11 @@ func (i *impl) deleteClip(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-	err := i.db.Delete(timestamp)
-	if err != nil {
+	if err := i.db.Delete(timestamp); err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
 	}
+	c.Status(http.StatusNoContent)
 }
 
 func (i *impl) saveClip(c *gin.Context) {
@@ -134,8 +175,9 @@ func (i *impl) saveClip(c *gin.Context) {
 	}
 	if err := i.db.Save(ci); err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
 	}
-
+	c.Status(http.StatusCreated)
 }
 
 func (i *impl) replaceClip(c *gin.Context) {
@@ -165,13 +207,15 @@ func (i *impl) replaceClip(c *gin.Context) {
 	ci.TimeStamp = timestamp
 	if err := i.db.Save(ci); err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return
 	}
+	c.Status(http.StatusOK)
 }
 
 type UploadClip struct {
 	Clip string `json:"clip"`
 }
 
-func New(db api.StorageApi, logger service.Logger) api.ServerApi {
-	return &impl{db: db, logger: logger}
+func New(db api.StorageApi, logger service.Logger, clipToken string) api.ServerApi {
+	return &impl{db: db, logger: logger, clipToken: clipToken}
 }

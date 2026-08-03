@@ -3,6 +3,7 @@ package storage
 import (
 	"clipboard/api"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"go.etcd.io/bbolt"
@@ -57,15 +58,18 @@ const view operation = 0
 const update operation = 1
 
 func (i *Impl) bucket(op operation, name string, callback func(bucket *bbolt.Bucket) error) error {
+	run := func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(name))
+		if b == nil {
+			return fmt.Errorf("bucket %q does not exist", name)
+		}
+		return callback(b)
+	}
 	switch op {
 	case update:
-		return i.db.Update(func(tx *bbolt.Tx) error {
-			return callback(tx.Bucket([]byte(name)))
-		})
+		return i.db.Update(run)
 	case view:
-		return i.db.View(func(tx *bbolt.Tx) error {
-			return callback(tx.Bucket([]byte(name)))
-		})
+		return i.db.View(run)
 	default:
 		panic("not possible")
 	}

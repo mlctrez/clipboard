@@ -14,12 +14,14 @@ import (
 //go:embed *
 var staticContent embed.FS
 
-func SetupRoutes(r *gin.Engine) {
+// SetupRoutes registers static file routes. isAdmin selects the full admin UI
+// (index.html) vs the empty external page (external.html) for "/".
+func SetupRoutes(r *gin.Engine, isAdmin func(*gin.Context) bool) {
 	r.GET("/", func(c *gin.Context) {
-		if c.Request.Header.Get("X-Homessl-Forwarded") == "true" {
-			c.Params = []gin.Param{{Key: "file", Value: "external.html"}}
-		} else {
+		if isAdmin(c) {
 			c.Params = []gin.Param{{Key: "file", Value: "index.html"}}
+		} else {
+			c.Params = []gin.Param{{Key: "file", Value: "external.html"}}
 		}
 		ServeContent(c)
 	})
@@ -32,7 +34,8 @@ func ServeContent(c *gin.Context) {
 		c.AbortWithStatus(404)
 	} else {
 		if path == "index.html" {
-			externalHost := os.Getenv("EXTERNAL_HOST")
+			// Required at service startup; host only (e.g. clipboard.mlctrez.com).
+			externalHost := strings.TrimSpace(os.Getenv("EXTERNAL_HOST"))
 			file = []byte(strings.ReplaceAll(string(file), "EXTERNAL_HOST", externalHost))
 		}
 		c.Data(200, mime.TypeByExtension(filepath.Ext(path)), file)

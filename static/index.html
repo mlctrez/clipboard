@@ -61,8 +61,35 @@
             color: #ff6b6b;
             font-weight: bold;
         }
+        .clip-controls .btn-copy {
+            color: #7ec8ff;
+        }
+        .clip-controls .btn-copy.copied {
+            color: #6bff8a;
+        }
+        .clip-controls button svg {
+            width: 14px;
+            height: 14px;
+            display: block;
+        }
     </style>
     <script>
+        // Host only (e.g. clipboard.mlctrez.com); substituted from EXTERNAL_HOST at serve time.
+        const externalHost = "EXTERNAL_HOST";
+
+        function externalClipUrl(clip) {
+            return "https://" + externalHost + "/clips/" + clip;
+        }
+
+        function linkIconSvg() {
+            // chain-link icon
+            return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+        }
+
+        function checkIconSvg() {
+            return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+        }
+
         document.addEventListener('paste', (event) => {
                 let items = event.clipboardData.items;
                 for (const itemKey in items) {
@@ -116,6 +143,26 @@
                                 .catch((error) => { console.error('Error:', error); });
                         };
 
+                        const btnCopy = document.createElement("button");
+                        btnCopy.className = "btn-copy";
+                        btnCopy.innerHTML = linkIconSvg();
+                        btnCopy.title = "Copy external URL";
+                        btnCopy.onclick = () => {
+                            const url = externalClipUrl(clip);
+                            navigator.clipboard.writeText(url).then(() => {
+                                btnCopy.classList.add("copied");
+                                btnCopy.innerHTML = checkIconSvg();
+                                btnCopy.title = "Copied!";
+                                setTimeout(() => {
+                                    btnCopy.classList.remove("copied");
+                                    btnCopy.innerHTML = linkIconSvg();
+                                    btnCopy.title = "Copy external URL";
+                                }, 1500);
+                            }).catch((error) => {
+                                console.error('Error copying URL:', error);
+                            });
+                        };
+
                         function scaleAndSave(img, clip, factor) {
                             const canvas = document.createElement("canvas");
                             const newWidth = Math.round(img.naturalWidth * factor);
@@ -144,6 +191,7 @@
                         btnDown.onclick = () => { scaleAndSave(img, clip, 0.5); };
 
                         controls.appendChild(btnDelete);
+                        controls.appendChild(btnCopy);
                         controls.appendChild(btnUp);
                         controls.appendChild(btnDown);
                         wrapper.appendChild(controls);

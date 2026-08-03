@@ -1,6 +1,6 @@
 
 NAME=clipboard
-HOST=goservice
+HOST=dune
 
 build: program/program.go
 	mkdir -p temp
