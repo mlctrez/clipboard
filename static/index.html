@@ -39,6 +39,14 @@
             flex-direction: column;
             gap: 4px;
             z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+        .clip-wrapper:hover .clip-controls,
+        .clip-wrapper:focus-within .clip-controls {
+            opacity: 1;
+            pointer-events: auto;
         }
         .clip-controls button {
             width: 28px;
